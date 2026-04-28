@@ -8,4 +8,6 @@ dependencies = [
     "pyarrow>=16.0.0",
     "torch>=2.4.0",
     "transformers>=4.46.0",
+    "google-genai>=0.1.0",
+    "python-dotenv>=1.0.0",
 ]

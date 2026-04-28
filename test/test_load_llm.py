@@ -13,15 +13,15 @@ from scripts.load_llm import load_llm
 
 def main() -> None:
     # Tiny model keeps this test lightweight while validating load/generate path.
-    model_name = "sshleifer/tiny-gpt2"
-    device = torch.device("cpu")
+    model_name = "microsoft/Phi-4-mini-instruct"
+    device = torch.device("cuda")
 
     print("STATUS: starting model load")
     model, tok = load_llm(model_name=model_name, device=device, force_float32=True)
     print(f"STATUS: connected to model '{model_name}' on device '{device.type}'")
     print(f"STATUS: tokenizer ready (vocab size={tok.vocab_size})")
 
-    question = "repeat the word 'hello' three times"
+    question = "what color is the sky?"
     inputs = tok(question, return_tensors="pt").to(device)
 
     with torch.no_grad():
