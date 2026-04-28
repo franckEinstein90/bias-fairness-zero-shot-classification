@@ -1,16 +1,5 @@
-import argparse
-import importlib.util
-from pathlib import Path
 from typing import Any
-
-import matplotlib.pyplot as plt
-import numpy as np
-import numpy.typing as npt
-import pandas as pd
 import torch
-from aieng.llm_interp.utils import get_device
-from rich.progress import track
-from torch.nn import functional
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -52,7 +41,7 @@ def load_llm(model_name: str, device: torch.device, force_float32: bool = False)
     model = (
         AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=load_dtype,
+            dtype=load_dtype,
             low_cpu_mem_usage=True,
         )
         .to(device)
