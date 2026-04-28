@@ -17,6 +17,7 @@ Examples of usage:
 
 # Importing necessary libraries
 import argparse  # For parsing command-line arguments
+import gc
 import itertools
 from collections.abc import Generator
 from pathlib import Path  # For working with file paths
@@ -131,8 +132,11 @@ def load_civil(stream: bool = False, take: int | None = None, split: str = "trai
             for r in ds
         )
 
-        it = list(itertools.islice(it_gen, take))
-        return pd.DataFrame(it)
+        rows = list(itertools.islice(it_gen, take))
+        df = pd.DataFrame(rows)
+        del rows, it_gen, ds
+        gc.collect()
+        return df
     # Remove unwanted columns and rename for consistency
     ds = ds.remove_columns([c for c in ds.column_names if c not in cols_keep])
     return ds.to_pandas().rename(columns={"text": "comment_text", "toxicity": "target"})
