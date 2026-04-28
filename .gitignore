@@ -1,0 +1,104 @@
+# Python
+*.py[cod]
+*$py.class
+__pycache__/
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS-specific
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Project-specific
+# Data files (uncomment if you don't want to track data)
+# data/
+*.csv
+*.json
+*.jsonl
+*.parquet
+*.pkl
+*.pickle
+
+# Model files
+*.pt
+*.pth
+*.h5
+*.ckpt
+checkpoint/
+checkpoints/
+models/
+
+# Logs and outputs
+logs/
+*.log
+outputs/
+results/
+wandb/
+mlruns/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

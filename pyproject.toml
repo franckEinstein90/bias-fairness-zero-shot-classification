@@ -1,4 +1,6 @@
 [project]
 name = "bias-fairness-zero-shot"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "datasets>=4.8.4",
+]
