@@ -38,8 +38,43 @@ def format_prompt(text: str, task: str) -> str:
     return f"{instruction}{text}\nLabel:"
 
 
+def extract_text_token_span(
+    tok: Any,
+    prompt: str,
+    input_ids: torch.Tensor,
+) -> tuple[list[str], torch.Tensor]:
+    """Return only the tokens that belong to the raw text between Text: and Label:."""
+    text_marker = "Text: "
+    label_marker = "\nLabel:"
+    text_start = prompt.index(text_marker) + len(text_marker)
+    text_end = prompt.rindex(label_marker)
+
+    enc_with_offsets = tok(
+        prompt,
+        return_tensors="pt",
+        add_special_tokens=True,
+        return_offsets_mapping=True,
+    )
+    offsets = enc_with_offsets["offset_mapping"][0].tolist()
+    keep_positions = [
+        idx
+        for idx, (start, end) in enumerate(offsets)
+        if end > start and start >= text_start and end <= text_end
+    ]
+
+    if not keep_positions:
+        return tok.convert_ids_to_tokens(input_ids[0].tolist()), torch.arange(input_ids.shape[1])
+
+    kept_ids = input_ids[0, keep_positions].tolist()
+    return tok.convert_ids_to_tokens(kept_ids), torch.tensor(keep_positions, device=input_ids.device)
+
+
 def integrated_gradients(
-    model: Any, tok: Any, text: str, task: str, steps: int = 32
+    model: Any,
+    tok: Any,
+    text: str,
+    task: str,
+    steps: int = 32,
 ) -> tuple[list[str], npt.NDArray[np.floating[Any]], str, float]:
     """
     Perform Integrated Gradients to identify which tokens influenced the model output.
@@ -67,6 +102,11 @@ def integrated_gradients(
     """
     device = next(model.parameters()).device
     model_dtype = next(model.parameters()).dtype
+
+    # Gradient checkpointing halves activation memory during the IG backward pass.
+    gc_was_enabled = getattr(model, "is_gradient_checkpointing", False)
+    if hasattr(model, "gradient_checkpointing_enable") and not gc_was_enabled:
+        model.gradient_checkpointing_enable()
 
     prompt = format_prompt(text, task)
     enc = tok(prompt, return_tensors="pt", add_special_tokens=True)
@@ -123,15 +163,22 @@ def integrated_gradients(
         s = score_fn(emb)
         s.backward()
         grads += emb.grad.detach()
+        del emb, s
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
     avg_grads = grads / steps
     atts = (avg_grads * (x - x0)).sum(dim=-1).squeeze(0)
     atts = atts / (atts.abs().sum() + 1e-8)
 
-    tokens = tok.convert_ids_to_tokens(input_ids[0].tolist())
+    tokens, keep_positions = extract_text_token_span(tok, prompt, input_ids)
+    atts = atts[keep_positions]
 
     with torch.no_grad():
         explained_score = float(score_fn(x))
+
+    if hasattr(model, "gradient_checkpointing_disable") and not gc_was_enabled:
+        model.gradient_checkpointing_disable()
 
     return tokens, atts.cpu().numpy(), prompt, explained_score
 

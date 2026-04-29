@@ -28,7 +28,7 @@ MODEL_OPTIONS = [
 
 
 def load_zero_shot_module():
-    module_path = ROOT / "src" / "zero-shot-evaluate.py"
+    module_path = ROOT / "src" / "zero_shot_evaluate.py"
     spec = spec_from_file_location("zero_shot_evaluate", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {module_path}")
@@ -37,7 +37,18 @@ def load_zero_shot_module():
     return module
 
 
+def load_ig_module():
+    module_path = ROOT / "src" / "integrated_gradients.py"
+    spec = spec_from_file_location("integrated_gradients", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 ZERO_SHOT = load_zero_shot_module()
+IG_MOD = load_ig_module()
 
 
 @st.cache_resource(show_spinner=False)
@@ -113,6 +124,9 @@ if "input_text" not in st.session_state:
 if "toxicity_result" not in st.session_state:
     st.session_state.toxicity_result = None
 
+if "ig_result" not in st.session_state:
+    st.session_state.ig_result = None
+
 st.title("Bias & Fairness in Zero-Shot Classification")
 st.caption("CivilComments dataset explorer + zero-shot starter")
 
@@ -187,12 +201,114 @@ if result:
     metric_col3.metric("Task", str(result["task"]))
     metric_col4.metric("Device", str(result.get("device", "")))
 
-    st.write("Score details")
-    st.write(f"model: {result.get('model_name', '')}")
-    st.write(f"positive label: {result['labels'][0]}")
-    st.write(f"negative label: {result['labels'][1]}")
-    st.write(f"lp_pos: {result['lp_pos']:.4f}")
-    st.write(f"lp_neg: {result['lp_neg']:.4f}")
+    with st.expander("Score details", expanded=False):
+        st.write(f"model: {result.get('model_name', '')}")
+        st.write(f"positive label: {result['labels'][0]}")
+        st.write(f"negative label: {result['labels'][1]}")
+        st.write(f"lp_pos: {result['lp_pos']:.4f}")
+        st.write(f"lp_neg: {result['lp_neg']:.4f}")
+        st.caption(
+            "Score = log P(toxic | prompt) − log P(non-toxic | prompt). "
+            "Positive values favour the toxic label."
+        )
+
+    ig_steps = st.select_slider(
+        "IG integration steps (higher = more accurate, slower)",
+        options=[4, 8, 16, 32, 64],
+        value=16,
+        key="ig_steps_slider",
+    )
+    explain_button = st.button("Explain with Integrated Gradients")
+    if explain_button:
+        text = st.session_state.get("input_text", "")
+        if not text.strip():
+            st.warning("No input text to explain.")
+        else:
+            try:
+                with st.spinner("Running Integrated Gradients — this may take a moment..."):
+                    model, tok = get_scoring_model(selected_model, selected_device)
+                    tokens, atts, prompt, ig_score = IG_MOD.integrated_gradients(
+                        model=model,
+                        tok=tok,
+                        text=text,
+                        task="toxicity",
+                        steps=ig_steps,
+                    )
+                    st.session_state.ig_result = {
+                        "tokens": tokens,
+                        "atts": atts,
+                        "prompt": prompt,
+                        "ig_score": ig_score,
+                    }
+            except torch.cuda.OutOfMemoryError:
+                st.error(
+                    "CUDA out of memory running IG. Try reducing IG steps or switching to CPU."
+                )
+            except Exception as exc:
+                st.error(f"Integrated Gradients failed: {exc}")
+
+ig = st.session_state.get("ig_result")
+if ig:
+    import pandas as pd
+    import numpy as np
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    st.subheader("Token attributions (Integrated Gradients)")
+
+    ig_metric_col1, ig_metric_col2, ig_metric_col3 = st.columns(3)
+    ig_metric_col1.metric("IG log-odds score", f"{ig['ig_score']:.4f}")
+    abs_atts = np.abs(ig["atts"])
+    top_idx = int(np.argmax(abs_atts))
+    top_token = ig["tokens"][top_idx].replace("Ġ", "")
+    ig_metric_col2.metric("Highest-attribution token", top_token)
+    pos_mass = float(ig["atts"][ig["atts"] > 0].sum())
+    ig_metric_col3.metric("Positive attribution mass", f"{pos_mass:.4f}")
+
+    # Heatmap bar chart
+    fig, ax = plt.subplots(figsize=(max(6, len(ig["tokens"]) * 0.35), 3))
+    colors = ["#d62728" if v > 0 else "#1f77b4" for v in ig["atts"]]
+    ax.bar(range(len(ig["tokens"])), ig["atts"], color=colors)
+    ax.set_xticks(range(len(ig["tokens"])))
+    ax.set_xticklabels(
+        [t.replace("Ġ", " ").strip() for t in ig["tokens"]],
+        rotation=60,
+        ha="right",
+        fontsize=8,
+    )
+    ax.set_ylabel("IG attribution (normalised)")
+    ax.axhline(0, color="black", linewidth=0.6)
+    ax.set_title(
+        "Red = pushes toward toxic   |   Blue = pushes toward non-toxic",
+        fontsize=9,
+    )
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Quantitative token table
+    import pandas as pd
+    df_ig = pd.DataFrame(
+        {
+            "token": [t.replace("Ġ", " ").strip() for t in ig["tokens"]],
+            "attribution": ig["atts"].tolist(),
+            "abs_attribution": abs_atts.tolist(),
+        }
+    )
+    df_ig["rank"] = df_ig["abs_attribution"].rank(ascending=False, method="min").astype(int)
+    df_ig = df_ig.sort_values("rank")
+    st.caption(
+        "Attribution ≈ share of the toxicity score explained by each token. "
+        "Positive = pushes toward **toxic**, negative = pushes toward **non-toxic**."
+    )
+    st.dataframe(
+        df_ig[["rank", "token", "attribution", "abs_attribution"]]
+        .rename(columns={"abs_attribution": "|attribution|"})
+        .reset_index(drop=True),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.divider()
 st.markdown(

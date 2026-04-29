@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 
 
 def _load_zero_shot_module():
-    module_path = ROOT / "src" / "zero-shot-evaluate.py"
+    module_path = ROOT / "src" / "zero_shot_evaluate.py"
     spec = spec_from_file_location("zero_shot_evaluate", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Unable to load module from {module_path}")
