@@ -4,7 +4,6 @@ import sys
 import time
 
 import streamlit as st
-import streamlit.components.v1 as components
 import torch
 
 
@@ -73,50 +72,6 @@ def maybe_grow_dataset(should_grow: bool) -> None:
         st.rerun()
 
 
-def inject_scroll_loader_js() -> None:
-    # Auto-click the load-more button when the page nears the bottom.
-    components.html(
-        """
-<script>
-(function () {
-  const doc = window.parent.document;
-  const THRESHOLD = 280;
-  const COOLDOWN_MS = 900;
-  let lastClick = 0;
-
-  function nearBottom() {
-    const scrollTop = window.parent.scrollY || doc.documentElement.scrollTop || 0;
-    const viewport = window.parent.innerHeight || doc.documentElement.clientHeight || 0;
-    const fullHeight = doc.documentElement.scrollHeight || 0;
-    return (scrollTop + viewport) >= (fullHeight - THRESHOLD);
-  }
-
-  function findButton() {
-    return Array.from(doc.querySelectorAll('button')).find(
-      (btn) => btn.innerText && btn.innerText.trim() === 'Load more rows'
-    );
-  }
-
-  function maybeLoad() {
-    const now = Date.now();
-    if (now - lastClick < COOLDOWN_MS) return;
-    if (!nearBottom()) return;
-
-    const btn = findButton();
-    if (btn && !btn.disabled) {
-      lastClick = now;
-      btn.click();
-    }
-  }
-
-  window.parent.addEventListener('scroll', maybeLoad, { passive: true });
-  setTimeout(maybeLoad, 300);
-})();
-</script>
-        """,
-        height=0,
-    )
-
 st.set_page_config(
     page_title="Bias & Fairness Zero-Shot",
     page_icon="⚖️",
@@ -173,7 +128,7 @@ with col1:
     st.write(f"Showing {len(df):,} rows")
     table_event = st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -192,8 +147,6 @@ with col1:
 
     if not can_grow:
         st.info(f"Reached max of {MAX_ROWS:,} rows for this viewer.")
-
-    inject_scroll_loader_js()
 
 with col2:
     st.subheader("Zero-shot playground")
