@@ -1,3 +1,4 @@
+from src.utils import format_prompt
 from pathlib import Path
 import sys
 from typing import Any
@@ -19,17 +20,6 @@ LABELS = {
     "hate": ["hateful", "not hateful"],
     "offense": ["offensive", "not offensive"],
 }
-
-
-def format_prompt(text: str, task: str) -> str:
-    """Wrap the input text in a task-specific instruction prompt."""
-    instruction = {
-        "toxicity": "Decide if the following text is toxic or non-toxic. Answer with a single word.\nText: ",
-        "hate": "Decide if the text is hateful or not hateful. Answer with a single word.\nText: ",
-        "offense": "Decide if the text is offensive or not offensive. Answer with a single word.\nText: ",
-    }[task]
-    return f"{instruction}{text}\nLabel:"
-
 
 def label_logprob(model: Any, tok: Any, prompt_ids: torch.Tensor, label_text: str) -> float:
     """Return log P(label_text | prompt_ids) under the causal language model."""

@@ -7,6 +7,23 @@ from dotenv import load_dotenv
 from google import genai
 
 
+def load_api_key() -> str:
+    """Load an API key from project .env file or process environment."""
+    project_root = Path(__file__).resolve().parent.parent
+    env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+
+    for key_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        api_key = os.getenv(key_name)
+        if api_key:
+            return api_key
+
+    raise AssertionError(
+        "API key not found. Set GEMINI_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY in .env."
+    )
+
+
 def test_simple_chatgpt_query():
     """Send a simple query to Google Gemini and verify we get a response.
     
@@ -16,12 +33,7 @@ def test_simple_chatgpt_query():
     3. Sends a simple query to Gemini
     4. Verifies we get a valid response
     """
-    # Load environment variables from .env
-    env_path = Path(__file__).parent.parent / ".env"
-    load_dotenv(env_path)
-    
-    api_key = os.getenv("OPENAI_API_KEY")  # Using existing Google API key
-    assert api_key is not None, "API key not found in .env file"
+    api_key = load_api_key()
     
     # Configure Google Generative AI client
     client = genai.Client(api_key=api_key)

@@ -47,8 +47,30 @@ def load_ig_module():
     return module
 
 
+def load_api_models_module():
+    module_path = ROOT / "src" / "llm_api" / "list_available_models.py"
+    spec = spec_from_file_location("list_available_models", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_gemini_query_module():
+    module_path = ROOT / "src" / "llm_api" / "gemini" / "query_gemini_model.py"
+    spec = spec_from_file_location("query_gemini_model", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {module_path}")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 ZERO_SHOT = load_zero_shot_module()
 IG_MOD = load_ig_module()
+API_MODELS_MOD = load_api_models_module()
+GEMINI_QUERY_MOD = load_gemini_query_module()
 
 
 @st.cache_resource(show_spinner=False)
@@ -65,6 +87,11 @@ def get_scoring_model(model_name: str, device_name: str):
 @st.cache_data(show_spinner=False)
 def get_civil_rows(take: int):
     return load_civil(stream=True, take=take)
+
+
+@st.cache_data(show_spinner=False)
+def get_api_models() -> list[str]:
+    return API_MODELS_MOD.list_models()
 
 
 def maybe_grow_dataset(should_grow: bool) -> None:
@@ -95,19 +122,39 @@ try:
     available_devices.insert(0, "cuda")
 except Exception:
     device = torch.device("cpu")
+available_devices.append("api")
 
 with st.sidebar:
     st.header("Evaluation settings")
-    selected_model = st.selectbox(
-        "Model",
-        MODEL_OPTIONS,
-        index=MODEL_OPTIONS.index(DEFAULT_MODEL_NAME),
-    )
     selected_device = st.selectbox(
         "Device",
         available_devices,
         index=0,
     )
+
+    model_options = MODEL_OPTIONS
+    default_model_name = DEFAULT_MODEL_NAME
+    if selected_device == "api":
+        try:
+            model_options = get_api_models()
+            if not model_options:
+                st.warning("No API models were returned.")
+                model_options = ["(no API models available)"]
+        except Exception as exc:
+            st.error(f"Failed to list API models: {exc}")
+            model_options = ["(failed to load API models)"]
+        default_model_name = model_options[0]
+
+    default_index = 0
+    if default_model_name in model_options:
+        default_index = model_options.index(default_model_name)
+
+    selected_model = st.selectbox(
+        "Model",
+        model_options,
+        index=default_index,
+    )
+
     if not torch.cuda.is_available():
         st.caption("CUDA is not available in this environment, so CPU is selected.")
     st.caption(f"Current model: {selected_model}")
@@ -176,6 +223,19 @@ if evaluate_button:
     text = st.session_state.get("input_text", "")
     if not text.strip():
         st.warning("Please provide input text.")
+    elif selected_device == "api":
+        try:
+            with st.spinner(f"Evaluating toxicity with {selected_model} on API..."):
+                result = GEMINI_QUERY_MOD.score_and_predict_gemini(
+                    model_name=selected_model,
+                    text=text,
+                    task="toxicity",
+                )
+                result["model_name"] = selected_model
+                result["device"] = selected_device
+                st.session_state.toxicity_result = result
+        except Exception as exc:
+            st.error(f"Toxicity evaluation failed: {exc}")
     else:
         try:
             with st.spinner(f"Evaluating toxicity with {selected_model} on {selected_device}..."):
@@ -205,8 +265,13 @@ if result:
         st.write(f"model: {result.get('model_name', '')}")
         st.write(f"positive label: {result['labels'][0]}")
         st.write(f"negative label: {result['labels'][1]}")
-        st.write(f"lp_pos: {result['lp_pos']:.4f}")
-        st.write(f"lp_neg: {result['lp_neg']:.4f}")
+        if result.get("device") == "api":
+            st.write("raw API answer:")
+            st.code(str(result.get("raw_answer", "")))
+            st.caption("Token-level log-probs are not returned by Gemini API for this flow.")
+        else:
+            st.write(f"lp_pos: {result['lp_pos']:.4f}")
+            st.write(f"lp_neg: {result['lp_neg']:.4f}")
         st.caption(
             "Score = log P(toxic | prompt) − log P(non-toxic | prompt). "
             "Positive values favour the toxic label."
@@ -223,6 +288,8 @@ if result:
         text = st.session_state.get("input_text", "")
         if not text.strip():
             st.warning("No input text to explain.")
+        elif result.get("device") == "api":
+            st.warning("Integrated Gradients is only available for local CPU/CUDA models.")
         else:
             try:
                 with st.spinner("Running Integrated Gradients — this may take a moment..."):
