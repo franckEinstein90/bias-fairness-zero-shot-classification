@@ -124,8 +124,11 @@ st.set_page_config(
 )
 
 available_devices = ["cpu"]
-if torch.cuda.is_available():
+try:
+    device = torch.device("cuda")
     available_devices.insert(0, "cuda")
+except Exception:
+    device = torch.device("cpu")
 
 with st.sidebar:
     st.header("Evaluation settings")
