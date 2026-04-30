@@ -141,7 +141,7 @@ with col1:
     st.write(f"Showing {len(df):,} rows")
     table_event = st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -318,7 +318,7 @@ if ig:
         df_ig[["rank", "token", "attribution", "abs_attribution"]]
         .rename(columns={"abs_attribution": "|attribution|"})
         .reset_index(drop=True),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
