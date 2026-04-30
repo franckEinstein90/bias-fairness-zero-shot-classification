@@ -14,7 +14,7 @@ from scripts.load_llm import load_llm
 def main() -> None:
     # Tiny model keeps this test lightweight while validating load/generate path.
     model_name = "microsoft/Phi-4-mini-instruct"
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("STATUS: starting model load")
     model, tok = load_llm(model_name=model_name, device=device, force_float32=True)
