@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from scripts.load_dataset import load_civil
 from scripts.load_llm import load_llm
 from front_end_one.sidebar import render_sidebar
+from src.gpu_api.print_gpu_stats import get_gpu_stats
 
 
 INITIAL_ROWS = 60
@@ -103,6 +104,73 @@ def maybe_grow_dataset(should_grow: bool) -> None:
         st.session_state.rows_to_show = min(current + ROW_STEP, MAX_ROWS)
         st.session_state._last_load_ts = now
         st.rerun()
+
+
+def _snapshot_gpu_state() -> list[dict]:
+    return get_gpu_stats()
+
+
+def _gpu_delta(before: list[dict], after: list[dict]) -> str:
+    if not before or not after:
+        return "n/a"
+    by_idx_before = {int(g["index"]): g for g in before}
+    parts: list[str] = []
+    for g in after:
+        idx = int(g["index"])
+        if idx not in by_idx_before:
+            continue
+        b = by_idx_before[idx]
+        d_alloc = float(g.get("allocated_gb", 0.0)) - float(b.get("allocated_gb", 0.0))
+        d_res = float(g.get("reserved_gb", 0.0)) - float(b.get("reserved_gb", 0.0))
+        parts.append(f"GPU{idx} Δalloc {d_alloc:+.2f} GB, Δreserved {d_res:+.2f} GB")
+    return " | ".join(parts) if parts else "n/a"
+
+
+def render_gpu_footer() -> None:
+    stats = _snapshot_gpu_state()
+    if not stats:
+        st.markdown(
+            """
+            <div class="gpu-footer">
+              <div class="gpu-footer-title">GPU Stats</div>
+              <div class="gpu-footer-line">No CUDA GPU detected in this runtime.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows: list[str] = []
+    for g in stats:
+        util = g.get("utilization_pct")
+        util_txt = f"{util:.0f}%" if isinstance(util, (int, float)) else "n/a"
+        used_txt = f"{g.get('smi_used_gb', 0.0):.2f}/{g.get('smi_total_gb', g.get('total_gb', 0.0)):.2f} GB"
+        rows.append(
+            " ".join(
+                [
+                    f"GPU{int(g['index'])}",
+                    f"alloc {float(g['allocated_gb']):.2f} GB",
+                    f"reserved {float(g['reserved_gb']):.2f} GB",
+                    f"free {float(g['free_gb']):.2f} GB",
+                    f"util {util_txt}",
+                    f"used {used_txt}",
+                ]
+            )
+        )
+
+    last_action = st.session_state.get("gpu_last_action", "none")
+    last_delta = st.session_state.get("gpu_last_delta", "n/a")
+    rows_html = "<br/>".join(rows)
+    st.markdown(
+        f"""
+        <div class="gpu-footer">
+          <div class="gpu-footer-title">GPU Stats (live)</div>
+          <div class="gpu-footer-line">{rows_html}</div>
+          <div class="gpu-footer-meta">Last tracked action: {last_action} | {last_delta}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_toxicity_result(result) -> None:
@@ -249,6 +317,12 @@ if "toxicity_result" not in st.session_state:
 if "ig_result" not in st.session_state:
     st.session_state.ig_result = None
 
+if "gpu_last_action" not in st.session_state:
+    st.session_state.gpu_last_action = "none"
+
+if "gpu_last_delta" not in st.session_state:
+    st.session_state.gpu_last_delta = "n/a"
+
 st.markdown(
     """
     <style>
@@ -265,7 +339,7 @@ st.markdown(
     [data-testid="stMain"] .block-container {
         max-width: none;
         padding-top: 2.4rem;
-        padding-bottom: 0.5rem;
+        padding-bottom: 4.8rem;
     }
 
     .app-logo {
@@ -295,6 +369,40 @@ st.markdown(
         font-size: 0.92rem;
         font-weight: 500;
         text-align: center;
+    }
+
+    .gpu-footer {
+        position: fixed;
+        left: auto;
+        right: 0.9rem;
+        bottom: 0.6rem;
+        z-index: 2000;
+        width: min(54rem, calc(100vw - 1.8rem));
+        border: 1px solid rgba(14, 46, 110, 0.55);
+        border-radius: 0.6rem;
+        background: rgba(228, 238, 255, 0.98);
+        backdrop-filter: blur(3px);
+        padding: 0.5rem 0.8rem;
+        box-shadow: 0 8px 20px rgba(10, 28, 70, 0.22);
+    }
+
+    .gpu-footer-title {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #0b2559;
+        margin-bottom: 0.2rem;
+    }
+
+    .gpu-footer-line {
+        font-size: 0.86rem;
+        color: #102a57;
+        line-height: 1.35;
+    }
+
+    .gpu-footer-meta {
+        font-size: 0.8rem;
+        color: #1f3f74;
+        margin-top: 0.22rem;
     }
 
     /* Force-hide main page scrollbar across browsers. */
@@ -383,6 +491,7 @@ open_toxicity_result_dialog = False
 open_ig_result_dialog = False
 
 if evaluate_button:
+    gpu_before_eval = _snapshot_gpu_state()
     text = st.session_state.get("input_text", "")
     if not text.strip():
         st.warning("Please provide input text.")
@@ -397,6 +506,9 @@ if evaluate_button:
                 result["model_name"] = selected_model
                 result["device"] = selected_device
                 st.session_state.toxicity_result = result
+                gpu_after_eval = _snapshot_gpu_state()
+                st.session_state.gpu_last_action = "Evaluate toxicity"
+                st.session_state.gpu_last_delta = _gpu_delta(gpu_before_eval, gpu_after_eval)
                 open_toxicity_result_dialog = True
         except Exception as exc:
             st.error(f"Toxicity evaluation failed: {exc}")
@@ -413,11 +525,15 @@ if evaluate_button:
                 result["model_name"] = selected_model
                 result["device"] = selected_device
                 st.session_state.toxicity_result = result
+                gpu_after_eval = _snapshot_gpu_state()
+                st.session_state.gpu_last_action = "Evaluate toxicity"
+                st.session_state.gpu_last_delta = _gpu_delta(gpu_before_eval, gpu_after_eval)
                 open_toxicity_result_dialog = True
         except Exception as exc:
             st.error(f"Toxicity evaluation failed: {exc}")
 
 if explain_button:
+    gpu_before_ig = _snapshot_gpu_state()
     text = st.session_state.get("input_text", "")
     if not text.strip():
         st.warning("No input text to explain.")
@@ -439,6 +555,9 @@ if explain_button:
                     "prompt": prompt,
                     "ig_score": ig_score,
                 }
+                gpu_after_ig = _snapshot_gpu_state()
+                st.session_state.gpu_last_action = "Explain with Integrated Gradients"
+                st.session_state.gpu_last_delta = _gpu_delta(gpu_before_ig, gpu_after_ig)
                 open_ig_result_dialog = True
         except torch.cuda.OutOfMemoryError:
             st.error(
@@ -457,3 +576,5 @@ if result and open_toxicity_result_dialog:
 ig = st.session_state.get("ig_result")
 if ig and open_ig_result_dialog:
     show_ig_result_dialog(ig)
+
+render_gpu_footer()
