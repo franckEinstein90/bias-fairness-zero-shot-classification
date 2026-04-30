@@ -16,8 +16,8 @@ def format_prompt(text: str, task: str) -> str:
     """
     # Simple instruction + user text -> ensures final token is "Label:" to predict after
     instruction = {
-        "toxicity": "Decide if the following text is toxic or non-toxic. Answer with a single word.\nText: ",
-        "hate": "Decide if the text is hateful or not hateful. Answer with a single word.\nText: ",
-        "offense": "Decide if the text is offensive or not offensive. Answer with a single word.\nText: ",
+        "toxicity": "Decide if the following text is toxic or non-toxic. Answer with the exact label text.\nText: ",
+        "hate": "Decide if the text is hateful or not hateful. Answer with the exact label text.\nText: ",
+        "offense": "Decide if the text is offensive or not offensive. Answer with the exact label text.\nText: ",
     }[task]
     return f"{instruction}{text}\nLabel:"
