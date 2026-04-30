@@ -22,16 +22,13 @@ def load_api_key() -> str:
 
 
 def list_gemini_models():
-    """List all available Gemini models."""
+    """Return all available Gemini models."""
     api_key = load_api_key()
 
     # Configure Google Generative AI client
     client = genai.Client(api_key=api_key)
 
     # List available models
-    print("Available Gemini models:")
     models = list(client.models.list())
-    for model in models:
-        print(f"  {model.name}")
 
     return models
