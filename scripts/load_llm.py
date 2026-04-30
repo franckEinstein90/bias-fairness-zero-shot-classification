@@ -1,17 +1,18 @@
-from typing import Any
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+)
 
 
-LABELS = {
-    # Binary label pairs; first entry treated as "positive" for score sign
-    "toxicity": ["toxic", "non-toxic"],
-    "hate": ["hateful", "not hateful"],
-    "offense": ["offensive", "not offensive"],
-}
 
-
-def load_llm(model_name: str, device: torch.device, force_float32: bool = False) -> tuple[Any, Any]:
+def load_llm(
+    model_name: str,
+    device: torch.device,
+    force_float32: bool = False,
+) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
     """
     Load a pre-trained LLM model and its corresponding tokenizer.
 
@@ -30,7 +31,7 @@ def load_llm(model_name: str, device: torch.device, force_float32: bool = False)
 
     Returns
     -------
-    tuple[Any, Any]
+    tuple[PreTrainedModel, PreTrainedTokenizerBase]
         A pair containing (model, tokenizer).
     """
     # Load tokenizer + model; float32 optional for stable grads (LayerNorm FP16 issues)

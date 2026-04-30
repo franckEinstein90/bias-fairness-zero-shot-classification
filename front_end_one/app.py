@@ -13,18 +13,12 @@ if str(ROOT) not in sys.path:
 
 from scripts.load_dataset import load_civil
 from scripts.load_llm import load_llm
+from front_end_one.sidebar import render_sidebar
 
 
 INITIAL_ROWS = 100
 ROW_STEP = 100
 MAX_ROWS = 2000
-DEFAULT_MODEL_NAME = "sshleifer/tiny-gpt2"
-MODEL_OPTIONS = [
-    "sshleifer/tiny-gpt2",
-    "distilgpt2",
-    "gpt2",
-    "microsoft/Phi-4-mini-instruct",
-]
 
 
 def load_zero_shot_module():
@@ -116,49 +110,7 @@ st.set_page_config(
     layout="wide",
 )
 
-available_devices = ["cpu"]
-try:
-    device = torch.device("cuda")
-    available_devices.insert(0, "cuda")
-except Exception:
-    device = torch.device("cpu")
-available_devices.append("api")
-
-with st.sidebar:
-    st.header("Evaluation settings")
-    selected_device = st.selectbox(
-        "Device",
-        available_devices,
-        index=0,
-    )
-
-    model_options = MODEL_OPTIONS
-    default_model_name = DEFAULT_MODEL_NAME
-    if selected_device == "api":
-        try:
-            model_options = get_api_models()
-            if not model_options:
-                st.warning("No API models were returned.")
-                model_options = ["(no API models available)"]
-        except Exception as exc:
-            st.error(f"Failed to list API models: {exc}")
-            model_options = ["(failed to load API models)"]
-        default_model_name = model_options[0]
-
-    default_index = 0
-    if default_model_name in model_options:
-        default_index = model_options.index(default_model_name)
-
-    selected_model = st.selectbox(
-        "Model",
-        model_options,
-        index=default_index,
-    )
-
-    if not torch.cuda.is_available():
-        st.caption("CUDA is not available in this environment, so CPU is selected.")
-    st.caption(f"Current model: {selected_model}")
-    st.caption(f"Current device: {selected_device}")
+selected_model, selected_device, ig_model, ig_device, ig_steps = render_sidebar(get_api_models)
 
 if "rows_to_show" not in st.session_state:
     st.session_state.rows_to_show = INITIAL_ROWS
@@ -277,23 +229,16 @@ if result:
             "Positive values favour the toxic label."
         )
 
-    ig_steps = st.select_slider(
-        "IG integration steps (higher = more accurate, slower)",
-        options=[4, 8, 16, 32, 64],
-        value=16,
-        key="ig_steps_slider",
-    )
     explain_button = st.button("Explain with Integrated Gradients")
     if explain_button:
         text = st.session_state.get("input_text", "")
         if not text.strip():
             st.warning("No input text to explain.")
-        elif result.get("device") == "api":
-            st.warning("Integrated Gradients is only available for local CPU/CUDA models.")
         else:
             try:
                 with st.spinner("Running Integrated Gradients — this may take a moment..."):
-                    model, tok = get_scoring_model(selected_model, selected_device)
+                    ig_runtime_device = "cuda" if ig_device == "gpu" and torch.cuda.is_available() else "cpu"
+                    model, tok = get_scoring_model(ig_model, ig_runtime_device)
                     tokens, atts, prompt, ig_score = IG_MOD.integrated_gradients(
                         model=model,
                         tok=tok,

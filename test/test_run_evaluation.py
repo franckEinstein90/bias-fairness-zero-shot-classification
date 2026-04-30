@@ -126,15 +126,15 @@ def run_evaluation(
         text = str(df.iloc[i][text_col])[:4096]
 
         # --- Zero-shot score ---
-        res = score_and_predict(model, tok, text, task)
-        log.debug("row %d | pred=%-12s score=%+.4f", i, res["pred"], res["score"])
+        zero_score_prediction = score_and_predict(model, tok, text, task)
+        log.debug("row %d | pred=%-12s score=%+.4f", i, zero_score_prediction["pred"], zero_score_prediction["score"])
         preds.append(
             {
                 "idx": i,
-                "pred": res["pred"],
-                "score": res["score"],
-                "lp_pos": res["lp_pos"],
-                "lp_neg": res["lp_neg"],
+                "pred": zero_score_prediction["pred"],
+                "score": zero_score_prediction["score"],
+                "lp_pos": zero_score_prediction["lp_pos"],
+                "lp_neg": zero_score_prediction["lp_neg"],
             }
         )
 
@@ -159,7 +159,7 @@ def run_evaluation(
                     )
 
                     # Sanity-check: IG scalar should be close to scoring scalar
-                    score_diffs.append(abs(res["score"] - ig_score))
+                    score_diffs.append(abs(zero_score_prediction["score"] - ig_score))
 
                     img_path = heatmap_dir / f"row{i}.png"
                     save_heatmap(toks, atts, str(img_path))

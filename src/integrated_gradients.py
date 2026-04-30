@@ -6,6 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
+
+from src.utils import format_prompt
+
 LABELS = {
     # Binary label pairs; first entry treated as "positive" for score sign
     "toxicity": ["toxic", "non-toxic"],
@@ -48,8 +52,8 @@ def extract_text_token_span(
 
 
 def integrated_gradients(
-    model: Any,
-    tok: Any,
+    model: PreTrainedModel,
+    tok: PreTrainedTokenizerBase,
     text: str,
     task: str,
     steps: int = 32,
@@ -62,7 +66,7 @@ def integrated_gradients(
 
     Parameters
     ----------
-    model : Any
+    model : PreTrainedModel
         The loaded LLM.
     tok : Any
         The tokenizer.
@@ -85,6 +89,12 @@ def integrated_gradients(
     gc_was_enabled = getattr(model, "is_gradient_checkpointing", False)
     if hasattr(model, "gradient_checkpointing_enable") and not gc_was_enabled:
         model.gradient_checkpointing_enable()
+
+    # IG only needs gradients w.r.t. prompt embeddings, not model parameters.
+    # Freezing params avoids allocating full parameter-gradient buffers each step.
+    param_requires_grad = [p.requires_grad for p in model.parameters()]
+    for p in model.parameters():
+        p.requires_grad_(False)
 
     prompt = format_prompt(text, task)
     enc = tok(prompt, return_tensors="pt", add_special_tokens=True)
@@ -131,34 +141,41 @@ def integrated_gradients(
         neg_score = full_label_logprob(emb, neg_ids)
         return pos_score - neg_score
 
-    # ----- Integrated Gradients -----
-    alphas = torch.linspace(0, 1, steps=steps, device=device, dtype=model_dtype).view(-1, 1, 1, 1)
+    try:
+        # ----- Integrated Gradients -----
+        alphas = torch.linspace(0, 1, steps=steps, device=device, dtype=model_dtype).view(-1, 1, 1, 1)
 
-    grads = torch.zeros_like(x)
+        grads = torch.zeros_like(x)
 
-    for a in alphas:
-        emb = (x0 + a * (x - x0)).requires_grad_(True)
-        s = score_fn(emb)
-        s.backward()
-        grads += emb.grad.detach()
-        del emb, s
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+        for a in alphas:
+            emb = (x0 + a * (x - x0)).requires_grad_(True)
+            s = score_fn(emb)
+            grad = torch.autograd.grad(
+                outputs=s,
+                inputs=emb,
+                retain_graph=False,
+                create_graph=False,
+                allow_unused=False,
+            )[0]
+            grads += grad.detach()
+            del emb, s, grad
 
-    avg_grads = grads / steps
-    atts = (avg_grads * (x - x0)).sum(dim=-1).squeeze(0)
-    atts = atts / (atts.abs().sum() + 1e-8)
+        avg_grads = grads / steps
+        atts = (avg_grads * (x - x0)).sum(dim=-1).squeeze(0)
+        atts = atts / (atts.abs().sum() + 1e-8)
 
-    tokens, keep_positions = extract_text_token_span(tok, prompt, input_ids)
-    atts = atts[keep_positions]
+        tokens, keep_positions = extract_text_token_span(tok, prompt, input_ids)
+        atts = atts[keep_positions]
 
-    with torch.no_grad():
-        explained_score = float(score_fn(x))
+        with torch.no_grad():
+            explained_score = float(score_fn(x))
 
-    if hasattr(model, "gradient_checkpointing_disable") and not gc_was_enabled:
-        model.gradient_checkpointing_disable()
-
-    return tokens, atts.cpu().numpy(), prompt, explained_score
+        return tokens, atts.cpu().numpy(), prompt, explained_score
+    finally:
+        if hasattr(model, "gradient_checkpointing_disable") and not gc_was_enabled:
+            model.gradient_checkpointing_disable()
+        for p, req_grad in zip(model.parameters(), param_requires_grad):
+            p.requires_grad_(req_grad)
 
 def save_heatmap(tokens: list[str], atts: npt.NDArray[np.floating[Any]], out_path: str) -> None:
     """

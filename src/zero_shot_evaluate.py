@@ -1,3 +1,6 @@
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
+
+from src.models import ZeroShotScorePrediction
 from src.utils import format_prompt
 from pathlib import Path
 import sys
@@ -20,6 +23,7 @@ LABELS = {
     "hate": ["hateful", "not hateful"],
     "offense": ["offensive", "not offensive"],
 }
+
 
 def label_logprob(model: Any, tok: Any, prompt_ids: torch.Tensor, label_text: str) -> float:
     """Return log P(label_text | prompt_ids) under the causal language model."""
@@ -44,7 +48,12 @@ def label_logprob(model: Any, tok: Any, prompt_ids: torch.Tensor, label_text: st
     return float(torch.stack(token_logps).sum().item())
 
 
-def score_and_predict(model: Any, tok: Any, text: str, task: str = "toxicity") -> dict[str, Any]:
+def score_and_predict(
+    model: PreTrainedModel,
+    tok: PreTrainedTokenizerBase,
+    text: str,
+    task: str = "toxicity",
+) -> ZeroShotScorePrediction:
     """Predict label and confidence score for one text using a loaded model/tokenizer."""
     if task not in LABELS:
         raise ValueError(f"Unknown task '{task}'. Expected one of: {list(LABELS)}")
@@ -59,18 +68,18 @@ def score_and_predict(model: Any, tok: Any, text: str, task: str = "toxicity") -
     score = lp_pos - lp_neg
     pred = y_pos if score > 0 else y_neg
 
-    return {
-        "task": task,
-        "prompt": prompt,
-        "score": score,
-        "pred": pred,
-        "labels": (y_pos, y_neg),
-        "lp_pos": lp_pos,
-        "lp_neg": lp_neg,
-    }
+    return ZeroShotScorePrediction(
+        task=task,
+        prompt=prompt,
+        score=score,
+        pred=pred,
+        labels=(y_pos, y_neg),
+        lp_pos=lp_pos,
+        lp_neg=lp_neg,
+    )
 
 
-def evaluate_toxicity(comment_text: str, model_name: str, device: torch.device) -> dict[str, Any]:
+def evaluate_toxicity(comment_text: str, model_name: str, device: torch.device) -> ZeroShotScorePrediction:
     """Load model via scripts/load_llm and evaluate toxicity for one comment."""
     model, tok = load_llm(model_name=model_name, device=device, force_float32=(device.type != "cuda"))
     return score_and_predict(model=model, tok=tok, text=comment_text, task="toxicity")
