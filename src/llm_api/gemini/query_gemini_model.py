@@ -8,13 +8,7 @@ from dotenv import load_dotenv
 from google import genai
 
 from src.utils import format_prompt
-
-
-LABELS = {
-    "toxicity": ["toxic", "non-toxic"],
-    "hate": ["hateful", "not hateful"],
-    "offense": ["offensive", "not offensive"],
-}
+from src.constants import LABELS
 
 
 def load_api_key() -> str:

@@ -8,14 +8,8 @@ from pathlib import Path
 
 from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
+from src.constants import LABELS
 from src.utils import format_prompt
-
-LABELS = {
-    # Binary label pairs; first entry treated as "positive" for score sign
-    "toxicity": ["toxic", "non-toxic"],
-    "hate": ["hateful", "not hateful"],
-    "offense": ["offensive", "not offensive"],
-}
 
 
 

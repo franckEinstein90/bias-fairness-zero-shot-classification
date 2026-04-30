@@ -43,16 +43,10 @@ except ModuleNotFoundError:
 
 try:
     from src.utils import format_prompt
+    from src.constants import LABELS
 except ModuleNotFoundError:
     from .utils import format_prompt
-
-
-LABELS = {
-    # Binary label pairs; first entry treated as "positive" for score sign
-    "toxicity": ["toxic", "non-toxic"],
-    "hate": ["hateful", "not hateful"],
-    "offense": ["offensive", "not offensive"],
-}
+    from .constants import LABELS
 
 
 def label_logprob(model: Any, tok: Any, prompt_ids: torch.Tensor, label_text: str) -> float:
