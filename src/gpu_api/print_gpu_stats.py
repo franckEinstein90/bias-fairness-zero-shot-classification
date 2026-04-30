@@ -17,8 +17,13 @@ def _query_nvidia_smi() -> dict[int, dict[str, float]]:
         "--format=csv,noheader,nounits",
     ]
     try:
-        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
-    except Exception:
+        out = subprocess.check_output(
+            cmd,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return {}
 
     stats: dict[int, dict[str, float]] = {}
