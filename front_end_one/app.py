@@ -448,11 +448,11 @@ st.text_area(
 )
 toolbar_col1, toolbar_col2, toolbar_col3 = st.columns(3)
 with toolbar_col1:
-    evaluate_button = st.button("Evaluate toxicity", width="stretch")
+    evaluate_button = st.button("Evaluate toxicity", use_container_width=True)
 with toolbar_col2:
-    explain_button = st.button("Explain with Integrated Gradients", width="stretch")
+    explain_button = st.button("Explain with Integrated Gradients", use_container_width=True)
 with toolbar_col3:
-    fairness_button = st.button("Fairness Evaluation", width="stretch")
+    fairness_button = st.button("Fairness Evaluation", use_container_width=True)
 
 st.subheader("Dataset")
 st.caption("Loads with page refresh and grows as you scroll down. Click a row to send text to the input box.")
