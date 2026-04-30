@@ -24,7 +24,7 @@ def load_api_key() -> str:
     )
 
 
-def test_simple_chatgpt_query():
+def test_simple_chatgpt_query() -> None:
     """Send a simple query to Google Gemini and verify we get a response.
     
     This test:
@@ -58,9 +58,6 @@ def test_simple_chatgpt_query():
     print(f"Query: What is 2 + 2?")
     print(f"Gemini Response: {answer}")
     
-    return answer
-
-
 if __name__ == "__main__":
-    result = test_simple_chatgpt_query()
-    print(f"\nTest passed! Response: {result}")
+    test_simple_chatgpt_query()
+    print("\nTest passed!")

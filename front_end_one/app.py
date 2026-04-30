@@ -16,9 +16,10 @@ from scripts.load_llm import load_llm
 from front_end_one.sidebar import render_sidebar
 
 
-INITIAL_ROWS = 100
-ROW_STEP = 100
+INITIAL_ROWS = 60
+ROW_STEP = 60
 MAX_ROWS = 2000
+DATAFRAME_HEIGHT = 360
 
 
 def load_zero_shot_module():
@@ -104,109 +105,7 @@ def maybe_grow_dataset(should_grow: bool) -> None:
         st.rerun()
 
 
-st.set_page_config(
-    page_title="Bias & Fairness Zero-Shot",
-    page_icon="⚖️",
-    layout="wide",
-)
-
-selected_model, selected_device, ig_model, ig_device, ig_steps = render_sidebar(get_api_models)
-
-if "rows_to_show" not in st.session_state:
-    st.session_state.rows_to_show = INITIAL_ROWS
-
-if "input_text" not in st.session_state:
-    st.session_state.input_text = (
-        "The candidate has a strong technical background and excellent communication skills."
-    )
-
-if "toxicity_result" not in st.session_state:
-    st.session_state.toxicity_result = None
-
-if "ig_result" not in st.session_state:
-    st.session_state.ig_result = None
-
-st.title("Bias & Fairness in Zero-Shot Classification")
-st.caption("CivilComments dataset explorer + zero-shot starter")
-
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.subheader("Dataset (left column)")
-    st.caption("Loads with page refresh and grows as you scroll down. Click a row to send text to the input box.")
-
-    with st.spinner("Loading CivilComments..."):
-        df = get_civil_rows(st.session_state.rows_to_show)
-
-    st.write(f"Showing {len(df):,} rows")
-    table_event = st.dataframe(
-        df,
-        width="stretch",
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="civil_comments_table",
-    )
-
-    selected_rows = table_event.selection.get("rows", [])
-    if selected_rows:
-        selected_idx = selected_rows[0]
-        if 0 <= selected_idx < len(df):
-            st.session_state.input_text = str(df.iloc[selected_idx].get("comment_text", ""))
-
-    can_grow = st.session_state.rows_to_show < MAX_ROWS
-    grow = st.button("Load more rows", disabled=not can_grow)
-    maybe_grow_dataset(grow)
-
-    if not can_grow:
-        st.info(f"Reached max of {MAX_ROWS:,} rows for this viewer.")
-
-with col2:
-    st.subheader("Zero-shot playground")
-    st.text_area(
-        "Input text",
-        height=160,
-        key="input_text",
-    )
-
-    evaluate_button = st.button("Evaluate toxicity")
-
-if evaluate_button:
-    text = st.session_state.get("input_text", "")
-    if not text.strip():
-        st.warning("Please provide input text.")
-    elif selected_device == "api":
-        try:
-            with st.spinner(f"Evaluating toxicity with {selected_model} on API..."):
-                result = GEMINI_QUERY_MOD.score_and_predict_gemini(
-                    model_name=selected_model,
-                    text=text,
-                    task="toxicity",
-                )
-                result["model_name"] = selected_model
-                result["device"] = selected_device
-                st.session_state.toxicity_result = result
-        except Exception as exc:
-            st.error(f"Toxicity evaluation failed: {exc}")
-    else:
-        try:
-            with st.spinner(f"Evaluating toxicity with {selected_model} on {selected_device}..."):
-                model, tok = get_scoring_model(selected_model, selected_device)
-                result = ZERO_SHOT.score_and_predict(
-                    model=model,
-                    tok=tok,
-                    text=text,
-                    task="toxicity",
-                )
-                result["model_name"] = selected_model
-                result["device"] = selected_device
-                st.session_state.toxicity_result = result
-        except Exception as exc:
-            st.error(f"Toxicity evaluation failed: {exc}")
-
-result = st.session_state.get("toxicity_result")
-if result:
-    st.success("Evaluation completed.")
+def render_toxicity_result(result) -> None:
     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
     metric_col1.metric("Prediction", str(result["pred"]))
     metric_col2.metric("Score", f"{result['score']:.4f}")
@@ -229,45 +128,16 @@ if result:
             "Positive values favour the toxic label."
         )
 
-    explain_button = st.button("Explain with Integrated Gradients")
-    if explain_button:
-        text = st.session_state.get("input_text", "")
-        if not text.strip():
-            st.warning("No input text to explain.")
-        else:
-            try:
-                with st.spinner("Running Integrated Gradients — this may take a moment..."):
-                    ig_runtime_device = "cuda" if ig_device == "gpu" and torch.cuda.is_available() else "cpu"
-                    model, tok = get_scoring_model(ig_model, ig_runtime_device)
-                    tokens, atts, prompt, ig_score = IG_MOD.integrated_gradients(
-                        model=model,
-                        tok=tok,
-                        text=text,
-                        task="toxicity",
-                        steps=ig_steps,
-                    )
-                    st.session_state.ig_result = {
-                        "tokens": tokens,
-                        "atts": atts,
-                        "prompt": prompt,
-                        "ig_score": ig_score,
-                    }
-            except torch.cuda.OutOfMemoryError:
-                st.error(
-                    "CUDA out of memory running IG. Try reducing IG steps or switching to CPU."
-                )
-            except Exception as exc:
-                st.error(f"Integrated Gradients failed: {exc}")
+    with st.expander("Prompt sent to model", expanded=False):
+        st.code(str(result.get("prompt", "")))
 
-ig = st.session_state.get("ig_result")
-if ig:
+
+def render_ig_result(ig) -> None:
     import pandas as pd
     import numpy as np
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
-    st.subheader("Token attributions (Integrated Gradients)")
 
     ig_metric_col1, ig_metric_col2, ig_metric_col3 = st.columns(3)
     ig_metric_col1.metric("IG log-odds score", f"{ig['ig_score']:.4f}")
@@ -277,6 +147,9 @@ if ig:
     ig_metric_col2.metric("Highest-attribution token", top_token)
     pos_mass = float(ig["atts"][ig["atts"] > 0].sum())
     ig_metric_col3.metric("Positive attribution mass", f"{pos_mass:.4f}")
+
+    with st.expander("Prompt sent to model", expanded=False):
+        st.code(str(ig.get("prompt", "")))
 
     # Heatmap bar chart — split into strips of at most 10 tokens so labels stay legible
     STRIP_SIZE = 10
@@ -303,7 +176,6 @@ if ig:
         ax.bar(range(len(strip_tokens)), strip_atts, color=colors)
         ax.set_xticks(range(len(strip_tokens)))
         ax.set_xticklabels(strip_tokens, rotation=45, ha="right", fontsize=9)
-        # Keep bar widths visually consistent across strips, including the last partial strip.
         ax.set_xlim(-0.5, STRIP_SIZE - 0.5)
         ax.set_ylabel("IG attribution", fontsize=8)
         ax.axhline(0, color="black", linewidth=0.6)
@@ -316,8 +188,6 @@ if ig:
         st.pyplot(fig)
         plt.close(fig)
 
-    # Quantitative token table
-    import pandas as pd
     df_ig = pd.DataFrame(
         {
             "token": [t.replace("Ġ", " ").strip() for t in ig["tokens"]],
@@ -339,14 +209,251 @@ if ig:
         hide_index=True,
     )
 
-st.divider()
+
+@st.dialog("Toxicity Evaluation", width="large")
+def show_toxicity_result_dialog(result) -> None:
+    render_toxicity_result(result)
+    if st.button("Close", key="close_toxicity_result_dialog"):
+        st.rerun()
+
+
+@st.dialog("Integrated Gradients Explanation", width="large")
+def show_ig_result_dialog(ig) -> None:
+    render_ig_result(ig)
+    if st.button("Close", key="close_ig_result_dialog"):
+        st.rerun()
+
+
+st.set_page_config(
+    page_title="Bias & Fairness Zero-Shot",
+    page_icon="⚖️",
+    layout="wide",
+)
+
+selected_model, selected_device, ig_model, ig_device, ig_steps = render_sidebar(get_api_models)
+
+if "rows_to_show" not in st.session_state:
+    st.session_state.rows_to_show = INITIAL_ROWS
+
+if "input_text" not in st.session_state:
+    st.session_state.input_text = (
+        "The candidate has a strong technical background and excellent communication skills."
+    )
+
+if "pending_input_text" in st.session_state:
+    st.session_state.input_text = st.session_state.pop("pending_input_text")
+
+if "toxicity_result" not in st.session_state:
+    st.session_state.toxicity_result = None
+
+if "ig_result" not in st.session_state:
+    st.session_state.ig_result = None
+
 st.markdown(
     """
-### Run locally
-Use this command from the project root:
+    <style>
+    html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > .main, section.main {
+        height: 100%;
+    }
 
-```bash
-streamlit run front_end_one/app.py --server.port 8501
-```
-"""
+    [data-testid="stAppViewContainer"] > .main {
+        overflow-y: auto !important;
+    }
+
+    [data-testid="stAppViewContainer"] .main .block-container,
+    [data-testid="stMain"] .block-container {
+        max-width: none;
+        padding-top: 2.4rem;
+        padding-bottom: 0.5rem;
+    }
+
+    .app-logo {
+        display: block;
+        margin: 0.1rem 0 0.35rem 0;
+        padding: 0.45rem 0.85rem;
+        border-radius: 0.65rem;
+        border: 1px solid rgba(80, 120, 220, 0.35);
+        background: linear-gradient(90deg, rgba(40, 90, 220, 0.12), rgba(25, 155, 180, 0.14));
+        color: #0c1f52;
+        font-size: 1.55rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        line-height: 1.15;
+        text-transform: uppercase;
+        box-shadow: 0 6px 18px rgba(20, 60, 120, 0.08);
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+        text-align: center;
+    }
+
+    .app-logo-subtitle {
+        margin-top: 0.25rem;
+        margin-bottom: 0.6rem;
+        color: rgba(20, 30, 60, 0.8);
+        font-size: 0.92rem;
+        font-weight: 500;
+        text-align: center;
+    }
+
+    /* Force-hide main page scrollbar across browsers. */
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    section.main::-webkit-scrollbar,
+    [data-testid="stAppViewContainer"]::-webkit-scrollbar,
+    [data-testid="stAppViewContainer"] > .main::-webkit-scrollbar,
+    [data-testid="stMain"]::-webkit-scrollbar,
+    [data-testid="stMain"] > div::-webkit-scrollbar,
+    [data-testid="stMain"] .block-container::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+    }
+
+    html, body, section.main,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > .main,
+    [data-testid="stMain"],
+    [data-testid="stMain"] > div,
+    [data-testid="stMain"] .block-container {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
+
+st.markdown(
+    """
+    <div class="app-logo">Bias &amp; Fairness · Zero-Shot</div>
+    <div class="app-logo-subtitle">CivilComments dataset explorer + zero-shot starter</div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.text_area(
+    "Input text",
+    height=90,
+    key="input_text",
+)
+toolbar_col1, toolbar_col2, toolbar_col3 = st.columns(3)
+with toolbar_col1:
+    evaluate_button = st.button("Evaluate toxicity", width="stretch")
+with toolbar_col2:
+    explain_button = st.button("Explain with Integrated Gradients", width="stretch")
+with toolbar_col3:
+    fairness_button = st.button("Fairness Evaluation", width="stretch")
+
+st.subheader("Dataset")
+st.caption("Loads with page refresh and grows as you scroll down. Click a row to send text to the input box.")
+
+with st.spinner("Loading CivilComments..."):
+    df = get_civil_rows(st.session_state.rows_to_show)
+
+st.write(f"Showing {len(df):,} rows")
+table_event = st.dataframe(
+    df,
+    width="stretch",
+    height=DATAFRAME_HEIGHT,
+    hide_index=True,
+    on_select="rerun",
+    selection_mode="single-row",
+    key="civil_comments_table",
+)
+
+selected_rows = table_event.selection.get("rows", [])
+if selected_rows:
+    selected_idx = selected_rows[0]
+    if 0 <= selected_idx < len(df):
+        selected_text = str(df.iloc[selected_idx].get("comment_text", ""))
+        if selected_text != st.session_state.get("input_text", ""):
+            st.session_state.pending_input_text = selected_text
+            st.rerun()
+
+can_grow = st.session_state.rows_to_show < MAX_ROWS
+grow = st.button("Load more rows", disabled=not can_grow)
+maybe_grow_dataset(grow)
+
+if not can_grow:
+    st.info(f"Reached max of {MAX_ROWS:,} rows for this viewer.")
+
+open_toxicity_result_dialog = False
+open_ig_result_dialog = False
+
+if evaluate_button:
+    text = st.session_state.get("input_text", "")
+    if not text.strip():
+        st.warning("Please provide input text.")
+    elif selected_device == "api":
+        try:
+            with st.spinner(f"Evaluating toxicity with {selected_model} on API..."):
+                result = GEMINI_QUERY_MOD.score_and_predict_gemini(
+                    model_name=selected_model,
+                    text=text,
+                    task="toxicity",
+                )
+                result["model_name"] = selected_model
+                result["device"] = selected_device
+                st.session_state.toxicity_result = result
+                open_toxicity_result_dialog = True
+        except Exception as exc:
+            st.error(f"Toxicity evaluation failed: {exc}")
+    else:
+        try:
+            with st.spinner(f"Evaluating toxicity with {selected_model} on {selected_device}..."):
+                model, tok = get_scoring_model(selected_model, selected_device)
+                result = ZERO_SHOT.score_and_predict(
+                    model=model,
+                    tok=tok,
+                    text=text,
+                    task="toxicity",
+                )
+                result["model_name"] = selected_model
+                result["device"] = selected_device
+                st.session_state.toxicity_result = result
+                open_toxicity_result_dialog = True
+        except Exception as exc:
+            st.error(f"Toxicity evaluation failed: {exc}")
+
+if explain_button:
+    text = st.session_state.get("input_text", "")
+    if not text.strip():
+        st.warning("No input text to explain.")
+    else:
+        try:
+            with st.spinner("Running Integrated Gradients — this may take a moment..."):
+                ig_runtime_device = "cuda" if ig_device == "gpu" and torch.cuda.is_available() else "cpu"
+                model, tok = get_scoring_model(ig_model, ig_runtime_device)
+                tokens, atts, prompt, ig_score = IG_MOD.integrated_gradients(
+                    model=model,
+                    tok=tok,
+                    text=text,
+                    task="toxicity",
+                    steps=ig_steps,
+                )
+                st.session_state.ig_result = {
+                    "tokens": tokens,
+                    "atts": atts,
+                    "prompt": prompt,
+                    "ig_score": ig_score,
+                }
+                open_ig_result_dialog = True
+        except torch.cuda.OutOfMemoryError:
+            st.error(
+                "CUDA out of memory running IG. Try reducing IG steps or switching to CPU."
+            )
+        except Exception as exc:
+            st.error(f"Integrated Gradients failed: {exc}")
+
+if fairness_button:
+    st.info("Fairness Evaluation UI is not wired yet. Next step: connect per-group metrics and disparity reports.")
+
+result = st.session_state.get("toxicity_result")
+if result and open_toxicity_result_dialog:
+    show_toxicity_result_dialog(result)
+
+ig = st.session_state.get("ig_result")
+if ig and open_ig_result_dialog:
+    show_ig_result_dialog(ig)

@@ -35,7 +35,7 @@ def test_single_comment_toxicity() -> None:
     print("lp_pos:", result["lp_pos"])
     print("lp_neg:", result["lp_neg"])
 
-    assert isinstance(result, dict)
+    assert isinstance(result, mod.ZeroShotScorePrediction)
     assert result["task"] == "toxicity"
     assert result["pred"] in result["labels"]
     assert isinstance(result["score"], float)
