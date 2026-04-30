@@ -18,7 +18,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 From the project root:
 
 ```bash
-cd /home/coder/bias-fairness-zero-shot-classification
 uv venv
 uv sync
 ```

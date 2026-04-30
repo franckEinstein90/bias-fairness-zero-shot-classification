@@ -12,7 +12,7 @@ except ModuleNotFoundError:
     try:
         # Package-relative import for contexts where `src` is the package root.
         from .models import ZeroShotScorePrediction
-    except Exception:
+    except ModuleNotFoundError:
         @dataclass
         class ZeroShotScorePrediction:
             task: str
