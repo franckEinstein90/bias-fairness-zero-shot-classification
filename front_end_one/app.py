@@ -278,26 +278,43 @@ if ig:
     pos_mass = float(ig["atts"][ig["atts"] > 0].sum())
     ig_metric_col3.metric("Positive attribution mass", f"{pos_mass:.4f}")
 
-    # Heatmap bar chart
-    fig, ax = plt.subplots(figsize=(max(6, len(ig["tokens"]) * 0.35), 3))
-    colors = ["#d62728" if v > 0 else "#1f77b4" for v in ig["atts"]]
-    ax.bar(range(len(ig["tokens"])), ig["atts"], color=colors)
-    ax.set_xticks(range(len(ig["tokens"])))
-    ax.set_xticklabels(
-        [t.replace("Ġ", " ").strip() for t in ig["tokens"]],
-        rotation=60,
-        ha="right",
-        fontsize=8,
-    )
-    ax.set_ylabel("IG attribution (normalised)")
-    ax.axhline(0, color="black", linewidth=0.6)
-    ax.set_title(
-        "Red = pushes toward toxic   |   Blue = pushes toward non-toxic",
-        fontsize=9,
-    )
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
+    # Heatmap bar chart — split into strips of at most 10 tokens so labels stay legible
+    STRIP_SIZE = 10
+    tokens_clean = [t.replace("Ġ", " ").strip() for t in ig["tokens"]]
+    n_tokens = len(tokens_clean)
+    n_strips = max(1, (n_tokens + STRIP_SIZE - 1) // STRIP_SIZE)
+
+    if n_strips == 1:
+        st.caption("Red = pushes toward **toxic**   |   Blue = pushes toward **non-toxic**")
+    else:
+        st.caption(
+            f"Red = pushes toward **toxic**   |   Blue = pushes toward **non-toxic**  "
+            f"— {n_tokens} tokens split across {n_strips} strips"
+        )
+
+    for strip_idx in range(n_strips):
+        start = strip_idx * STRIP_SIZE
+        end = min(start + STRIP_SIZE, n_tokens)
+        strip_tokens = tokens_clean[start:end]
+        strip_atts = ig["atts"][start:end]
+
+        colors = ["#d62728" if v > 0 else "#1f77b4" for v in strip_atts]
+        fig, ax = plt.subplots(figsize=(max(4, STRIP_SIZE * 0.7), 2.8))
+        ax.bar(range(len(strip_tokens)), strip_atts, color=colors)
+        ax.set_xticks(range(len(strip_tokens)))
+        ax.set_xticklabels(strip_tokens, rotation=45, ha="right", fontsize=9)
+        # Keep bar widths visually consistent across strips, including the last partial strip.
+        ax.set_xlim(-0.5, STRIP_SIZE - 0.5)
+        ax.set_ylabel("IG attribution", fontsize=8)
+        ax.axhline(0, color="black", linewidth=0.6)
+        if n_strips > 1:
+            ax.set_title(
+                f"Tokens {start + 1}–{end}  (strip {strip_idx + 1} of {n_strips})",
+                fontsize=8,
+            )
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
     # Quantitative token table
     import pandas as pd
