@@ -141,7 +141,7 @@ with col1:
     st.write(f"Showing {len(df):,} rows")
     table_event = st.dataframe(
         df,
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
