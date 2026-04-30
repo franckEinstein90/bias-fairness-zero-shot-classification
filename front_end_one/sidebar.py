@@ -29,11 +29,8 @@ def render_sidebar(get_api_models_fn) -> tuple[str, str, str, str, int]:
         (selected_model, selected_device, ig_model, ig_device, ig_steps)
     """
     available_devices: list[str] = ["cpu"]
-    try:
-        torch.device("cuda")
+    if torch.cuda.is_available():
         available_devices.insert(0, "cuda")
-    except Exception:
-        pass
     available_devices.append("api")
 
     with st.sidebar:

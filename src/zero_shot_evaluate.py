@@ -1,20 +1,50 @@
-from transformers import PreTrainedModel, PreTrainedTokenizerBase
-
-from src.models import ZeroShotScorePrediction
-from src.utils import format_prompt
-from pathlib import Path
-import sys
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
 import torch.nn.functional as F
+from transformers import PreTrainedModel, PreTrainedTokenizerBase
 
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+try:
+    from src.models import ZeroShotScorePrediction
+except ModuleNotFoundError:
+    try:
+        # Package-relative import for contexts where `src` is the package root.
+        from .models import ZeroShotScorePrediction
+    except Exception:
+        @dataclass
+        class ZeroShotScorePrediction:
+            task: str
+            prompt: str
+            score: float
+            pred: str
+            labels: tuple[str, str]
+            lp_pos: float
+            lp_neg: float
+            extra: dict[str, Any] = field(default_factory=dict)
 
-from scripts.load_llm import load_llm
+            def __getitem__(self, key: str) -> Any:
+                if key in self.__dataclass_fields__ and key != "extra":
+                    return getattr(self, key)
+                return self.extra[key]
+
+            def __setitem__(self, key: str, value: Any) -> None:
+                if key in self.__dataclass_fields__ and key != "extra":
+                    setattr(self, key, value)
+                else:
+                    self.extra[key] = value
+
+            def get(self, key: str, default: Any = None) -> Any:
+                try:
+                    return self[key]
+                except KeyError:
+                    return default
+
+try:
+    from src.utils import format_prompt
+except ModuleNotFoundError:
+    from .utils import format_prompt
 
 
 LABELS = {
@@ -81,5 +111,8 @@ def score_and_predict(
 
 def evaluate_toxicity(comment_text: str, model_name: str, device: torch.device) -> ZeroShotScorePrediction:
     """Load model via scripts/load_llm and evaluate toxicity for one comment."""
+    # Lazy import so this module stays importable even when `scripts` is not on PYTHONPATH.
+    from scripts.load_llm import load_llm
+
     model, tok = load_llm(model_name=model_name, device=device, force_float32=(device.type != "cuda"))
     return score_and_predict(model=model, tok=tok, text=comment_text, task="toxicity")
