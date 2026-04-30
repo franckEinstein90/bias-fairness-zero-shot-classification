@@ -59,17 +59,14 @@ def _parse_label_answer(answer: str, task: str) -> tuple[str, float]:
     """Map Gemini text answer to one of the binary task labels and a signed score."""
     pos_label, neg_label = LABELS[task]
     normalized = answer.strip().lower().replace("_", "-")
-    first_token = normalized.split()[0] if normalized else ""
 
-    if first_token.startswith(pos_label):
-        return pos_label, 1.0
-    if first_token.startswith(neg_label):
+    # Check the full negative label first before checking positive to avoid
+    # false substring matches (e.g., "not hateful" contains "hateful",
+    # "non-toxic" contains "toxic").
+    if neg_label in normalized:
         return neg_label, -1.0
-
-    if pos_label in normalized and neg_label not in normalized:
+    if pos_label in normalized:
         return pos_label, 1.0
-    if neg_label in normalized and pos_label not in normalized:
-        return neg_label, -1.0
 
     # Fallback: keep output schema stable, mark uncertain cases as non-positive.
     return neg_label, 0.0
