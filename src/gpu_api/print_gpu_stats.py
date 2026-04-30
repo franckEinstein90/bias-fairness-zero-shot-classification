@@ -1,24 +1,43 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from typing import Any
 
 import torch
 
 
+_smi_cache_data: dict[int, dict[str, float]] = {}
+_smi_cache_ts: float = 0.0
+_SMI_TTL = 1.0  # seconds
+
+
 def _query_nvidia_smi() -> dict[int, dict[str, float]]:
     """Return optional per-GPU utilization and memory values from nvidia-smi.
 
+    Results are cached for up to _SMI_TTL seconds to avoid per-rerun overhead.
     Returns an empty dict when nvidia-smi is unavailable.
     """
+    global _smi_cache_data, _smi_cache_ts
+    now = time.monotonic()
+    if now - _smi_cache_ts < _SMI_TTL:
+        return _smi_cache_data
+
     cmd = [
         "nvidia-smi",
         "--query-gpu=index,utilization.gpu,memory.used,memory.total",
         "--format=csv,noheader,nounits",
     ]
     try:
-        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
-    except Exception:
+        out = subprocess.check_output(
+            cmd,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        _smi_cache_data = {}
+        _smi_cache_ts = now
         return {}
 
     stats: dict[int, dict[str, float]] = {}
@@ -38,6 +57,8 @@ def _query_nvidia_smi() -> dict[int, dict[str, float]]:
             "smi_used_gb": mem_used_mb / 1024.0,
             "smi_total_gb": mem_total_mb / 1024.0,
         }
+    _smi_cache_data = stats
+    _smi_cache_ts = now
     return stats
 
 

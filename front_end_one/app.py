@@ -144,7 +144,12 @@ def render_gpu_footer() -> None:
     for g in stats:
         util = g.get("utilization_pct")
         util_txt = f"{util:.0f}%" if isinstance(util, (int, float)) else "n/a"
-        used_txt = f"{g.get('smi_used_gb', 0.0):.2f}/{g.get('smi_total_gb', g.get('total_gb', 0.0)):.2f} GB"
+        total_gb = g.get("smi_total_gb", g.get("total_gb", 0.0))
+        if "smi_used_gb" in g:
+            used_txt = f"{g['smi_used_gb']:.2f}/{total_gb:.2f} GB"
+        else:
+            derived_used = g.get("total_gb", 0.0) - g.get("free_gb", 0.0)
+            used_txt = f"{derived_used:.2f}/{total_gb:.2f} GB"
         rows.append(
             " ".join(
                 [
@@ -273,7 +278,7 @@ def render_ig_result(ig) -> None:
         df_ig[["rank", "token", "attribution", "abs_attribution"]]
         .rename(columns={"abs_attribution": "|attribution|"})
         .reset_index(drop=True),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
 
@@ -404,30 +409,6 @@ st.markdown(
         color: #1f3f74;
         margin-top: 0.22rem;
     }
-
-    /* Force-hide main page scrollbar across browsers. */
-    html::-webkit-scrollbar,
-    body::-webkit-scrollbar,
-    section.main::-webkit-scrollbar,
-    [data-testid="stAppViewContainer"]::-webkit-scrollbar,
-    [data-testid="stAppViewContainer"] > .main::-webkit-scrollbar,
-    [data-testid="stMain"]::-webkit-scrollbar,
-    [data-testid="stMain"] > div::-webkit-scrollbar,
-    [data-testid="stMain"] .block-container::-webkit-scrollbar {
-        width: 0;
-        height: 0;
-        display: none;
-    }
-
-    html, body, section.main,
-    [data-testid="stAppViewContainer"],
-    [data-testid="stAppViewContainer"] > .main,
-    [data-testid="stMain"],
-    [data-testid="stMain"] > div,
-    [data-testid="stMain"] .block-container {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -448,11 +429,11 @@ st.text_area(
 )
 toolbar_col1, toolbar_col2, toolbar_col3 = st.columns(3)
 with toolbar_col1:
-    evaluate_button = st.button("Evaluate toxicity", width="stretch")
+    evaluate_button = st.button("Evaluate toxicity", use_container_width=True)
 with toolbar_col2:
-    explain_button = st.button("Explain with Integrated Gradients", width="stretch")
+    explain_button = st.button("Explain with Integrated Gradients", use_container_width=True)
 with toolbar_col3:
-    fairness_button = st.button("Fairness Evaluation", width="stretch")
+    fairness_button = st.button("Fairness Evaluation", use_container_width=True)
 
 st.subheader("Dataset")
 st.caption("Loads with page refresh and grows as you scroll down. Click a row to send text to the input box.")
@@ -463,7 +444,7 @@ with st.spinner("Loading CivilComments..."):
 st.write(f"Showing {len(df):,} rows")
 table_event = st.dataframe(
     df,
-    width="stretch",
+    use_container_width=True,
     height=DATAFRAME_HEIGHT,
     hide_index=True,
     on_select="rerun",
